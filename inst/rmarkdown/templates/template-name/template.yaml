@@ -1,0 +1,4 @@
+name: MicrobiotaAnalysis
+description: >
+   Template for standard 16S rRNA sequencing data analysis in the Benakis Lab
+create_dir: FALSE

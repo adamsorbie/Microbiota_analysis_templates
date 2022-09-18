@@ -1,0 +1,320 @@
+---
+title: "16S analysis template"
+author: "Adam Sorbie"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Microbiota analysis 
+
+This document contains a template for conducting routine analysis of microbiota data 
+(16S rRNA sequencing).
+
+
+## Set project directories
+
+```{r set-directories}
+scripts_dir <- "../scripts"
+data_dir <- "../data/"
+```
+
+
+## Load libraries  
+
+```{r load-libraries, warning=FALSE, message=FALSE}
+# download latest version of analysis script and source 
+if (!file.exists(paste0(scripts_dir,"/analysis_functions.R"))){
+  download.file("https://raw.githubusercontent.com/adamsorbie/Stroke_Microbiota_reproducibility/main/scripts/analysis_functions.R", destfile = paste0(scripts_dir,"/analysis_functions.R"))
+}
+
+source( paste0(scripts_dir,"/analysis_functions.R"))
+# put other functions in benakis lab repo
+devtools::source_url("https://raw.githubusercontent.com/adamsorbie/BenakisLab/main/16S/analysis_scripts/helper_functions.")
+## additional libraries
+pacman::p_load(microViz, microbiome, microbiomeutilities, seecolor, cowplot)
+```
+
+## Set project attributes  
+
+Fill the details accordingly.  
+
+**Project title** : Create a standard workflow for data reporting.  
+**Main author** : Adam Sorbie  
+**contributor(s)** : XXXX  
+**Principal Investigator (s)** : Corinne Benakis   
+
+
+```{r set-seed}
+set.seed(42)
+```
+
+```{r set-attributes}
+# palette for categories 
+cat.palette <- c("#FF3030", "#1E90FF", "#2C6E49", "#F0C808", "#EEF0F2")
+stacked_bar.palette <- c("#E64B35FF", "#4DBBD5FF", "#00A087FF", "#3C5488FF", "#F39B7FFF", 
+                         "#8491B4FF", "#91D1C2FF", "#DC0000FF", "#7E6148FF", "#B09C85FF", 
+                         "#E4E9B2", "#F9A620", "#054A29", "#52414C")
+
+hm.palette <-  RColorBrewer::brewer.pal(9, "RdBu")
+# view colours
+all_pals <- list(cat.palette, stacked_bar.palette, hm.palette)
+map(all_pals, function(x) seecolor::print_color(x, type="r"))
+```
+
+
+```{r setup-2, warning=FALSE, message=FALSE}
+dir.create("QC")
+dir.create("Processed-Data")
+dir.create("Alpha-Diversity")
+dir.create("Beta-Diversity")
+dir.create("Taxonomic-Composition")
+dir.create("Differential-Abundance")
+dir.create("Other")
+```
+
+
+## Load data
+
+This code chunk reads the input files and creates a phyloseq object. 
+
+```{r load-data}
+ps <- import_as_pseq(otu = paste0(data_dir, "dada2_out/ASV_seqtab_tax.tab"),
+                mapping = paste0(data_dir, "Metadata-16S-sequenced_wo_ctrls.txt"),
+                tree = paste0(data_dir, "dada2_out/ASV_tree.tre"))
+```
+
+
+## QC {.tabset}
+
+### Distribution of reads  
+
+```{r, qc-1}
+qc_plot <- plot_read_distribution(ps, groups ="Group", 
+    plot.type = "density") + theme_cowplot()
+qc_plot
+ggsave("./QC/ReadDistribution.pdf")
+```
+
+### Library sizes (histogram)  
+
+```{r, qc-3}
+pdf("QC/Library_size.pdf")
+barplot(sort(sample_sums(ps)), horiz = TRUE, las = 2, xlab=NULL, main="Library sizes")
+hist(sort(sample_sums(ps)), las = 2)
+dev.off()
+```
+### Rarefaction curve 
+```{r}
+pdf("QC/rarefaction_curve.pdf")
+rcurve <- rarecurve(t(otu_table(ps)), step=50, cex=0.5)
+dev.off()
+```
+
+### ASV variance
+
+```{r qc-7}
+Variance.plot <- qplot(log10(apply(otu_table(ps), 1, var)), 
+                         xlab = "log10(variance)", 
+                         main = "Variance in OTUs") + 
+  ggtitle("Before filtering") + theme_cowplot()
+
+print(Variance.plot)
+
+ggsave("QC/Variance.pdf")
+```
+```{r}
+ps_filt <- prune_taxa(taxa_sums(ps) > 5000, ps)
+
+Variance.plot <- qplot(log10(apply(otu_table(ps_filt), 1, var)), 
+                         xlab = "log10(variance)", 
+                         main = "Variance in OTUs") + 
+  ggtitle("After filtering") + theme_cowplot()
+
+print(Variance.plot)
+
+ggsave("QC/Variance_filtered.pdf")
+```
+Remember to adjust normalisation with the filtered phyloseq object here if necessary!
+
+
+## Normalisation {.tabset}
+
+```{r}
+ps_norm <- transform(ps, transform = "mss")
+ps_rel <- transform(ps, transform = "relative")
+save(ps_norm, ps_rel, file = "Processed-Data/normalised_ps.Rdata")
+```
+
+
+## Alpha diversity {.tabset}  
+
+```{r fig.height=6, fig.width=4}
+alpha_div <- calc_alpha(ps_norm)
+meta <-meta_to_df(ps_norm)
+# merge alpha diversity df and metadata by rownames (0)
+alpha_div_meta <- merge(alpha_div, meta, by=0)
+```
+
+```{r}
+comps <- list(c("Stroke", "Sham"))
+colours <- cat.palette[c(1,2)]
+names(colours) <- c("Stroke", "Sham")
+metrics <- c("Richness", "Shannon.Effective", "Faiths.PD")
+```
+
+```{r}
+for (i in metrics){
+  p <- plot_boxplot(df = alpha_div_meta, variable_col = "Group", value_col = i, 
+             fill_var = "Group", comparisons_list = comps, xlab = "Group", 
+             ylab = i, p_title = "Richness Stroke vs Sham", 
+             col_palette = colours, group.order = c("Sham", "Stroke")) +
+  theme(axis.text = element_text(size=16))
+  name <- paste0("Alpha-Diversity/", gsub("\\.", "_",i), ".pdf")
+  ggsave(filename = name,plot=p, device = "pdf",dpi = 300)
+  print(p)
+}
+
+```
+
+
+
+## Beta Diversity (Ordinations) {.tabset}     
+
+
+### Bray-Curtis distance PCoA  
+
+
+```{r BC-NMDS, fig.height=4, fig.width=8}
+bc <- calc_betadiv(ps_norm, dist = "bray", ord_method = "NMDS")
+plot_bc <- plot_beta_div(ps_norm, ordination = bc$Ordination, dist_matrix = bc$Distance_Matrix, 
+              group_variable = "Group", cols = colours)
+ggsave("Beta-Diversity/bray-curtis_plot.pdf", plot = plot_bc, device = "pdf")
+```
+
+
+### GUnifrac distance PCoA  
+
+fix issue with fig size 
+```{r gunifrac-NMDS, fig.height=4, fig.width=8}
+gu <- calc_betadiv(ps_norm, dist = "gunifrac", ord_method = "NMDS")
+p_gu <- plot_beta_div(ps_norm, ordination = gu$Ordination, dist_matrix = gu$Distance_Matrix, 
+              group_variable = "Group", cols = colours)
+ggsave("Beta-Diversity/gunifrac_plot.pdf", plot = plot_bc, device = "pdf")
+```
+
+## Taxonomic composition  {.tabset}   
+
+Having a look at the phyloegnetic composition of you data is useful for many reasons. FOr this purpose we have two Phylum and Family level plots.
+
+### Phylum  
+
+```{r}
+top_phyla <- c(get_top_n(ps, n=6, level = "Phylum"), "other")
+
+phyla_pal <- c(stacked_bar.palette[1:length(top_phyla) -1], "#DCDCDC")
+names(phyla_pal) <- top_phyla
+
+
+sample_ord <- ps %>%
+  ps_arrange(Group) %>%
+  sample_data() %>%
+  rownames()
+
+phylum_fig <- ps %>% 
+  tax_fix(unknowns = c("")) %>%
+  tax_agg(rank="Phylum") %>% 
+  ps_reorder(sample_ord) %>% 
+   ps_arrange(desc(top_phyla[1]), .target = "otu_table") %>% 
+  comp_barplot(
+    tax_level = "Phylum", n_taxa = 6,
+    bar_outline_colour = "black", bar_width = 0.9,
+    palette = phyla_pal) +
+  facet_grid(.~factor(Group, stringr::str_sort(unique(Group))),
+    scales = "free", space = "free" # these options are critically important!
+  ) + 
+  theme_cowplot() +
+  scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=22),
+        axis.text.y = element_text(size=18),
+        axis.ticks = element_blank())
+
+phylum_fig
+ggsave("Taxonomic-Composition/phylum_level_composition.pdf", phylum_fig, device = "pdf", 
+       dpi=300, height= 8, width=14)
+
+```
+
+### Family  
+
+```{r}
+top_families <- c(get_top_n(ps, n=10, level = "Family"), "other")
+
+family_pal <- c(stacked_bar.palette[1:length(top_families) -1], "#DCDCDC")
+names(family_pal) <- top_families
+
+
+family_fig <- ps %>% 
+  tax_fix(unknowns = c("")) %>%
+  tax_agg(rank="Family") %>% 
+  ps_reorder(sample_ord) %>% 
+   ps_arrange(desc(top_families[1]), .target = "otu_table") %>% 
+  comp_barplot(
+    tax_level = "Family", n_taxa = 10,
+    bar_outline_colour = "black", bar_width = 0.9,
+    palette = family_pal) +
+  facet_grid(.~factor(Group, stringr::str_sort(unique(Group))),
+    scales = "free", space = "free" # these options are critically important!
+  ) + 
+  theme_cowplot() +
+  scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=22),
+        axis.text.y = element_text(size=18),
+        axis.ticks = element_blank())
+
+family_fig
+ggsave("Taxonomic-Composition/family_level_composition.pdf", family_fig, device = "pdf", 
+       dpi=300, height= 8, width=14)
+
+```
+
+
+## Differential abundance {.tabset}
+
+```{r}
+ancom_res <- ancom_da(ps, "Group", "Group", ord=c("Sham", "Stroke"), zero_thresh = 0.33)
+```
+
+```{r}
+plot_da(ancom_res, groups=c("Sham", "Stroke"), cols = colours)
+```
+
+## Heatmap  
+
+```{r heatmap}
+ps_format <- format_taxonomy(ps_norm)
+da_asvs <- ancom_res$Row.names
+```
+
+```{r}
+plot_heatmap(ps_format, da_asvs, variable = "Group", heatmap.colours=hm.palette)
+# save heatmap
+```
+
+
+```{r session-info}
+
+sessionInfo()
+
+```
+
