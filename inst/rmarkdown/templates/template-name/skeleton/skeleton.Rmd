@@ -36,7 +36,7 @@ if (!file.exists(paste0(scripts_dir,"/analysis_functions.R"))){
 
 source( paste0(scripts_dir,"/analysis_functions.R"))
 # put other functions in benakis lab repo
-devtools::source_url("https://raw.githubusercontent.com/adamsorbie/BenakisLab/main/16S/analysis_scripts/helper_functions.")
+devtools::source_url("https://raw.githubusercontent.com/adamsorbie/BenakisLab/main/16S/analysis_scripts/helper_functions_microbiome.R")
 ## additional libraries
 pacman::p_load(microViz, microbiome, microbiomeutilities, seecolor, cowplot)
 ```
