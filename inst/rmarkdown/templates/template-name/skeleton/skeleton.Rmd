@@ -36,7 +36,7 @@ if (!file.exists(paste0(scripts_dir,"/analysis_functions.R"))){
 
 source( paste0(scripts_dir,"/analysis_functions.R"))
 # put other functions in benakis lab repo
-devtools::source_url("https://raw.githubusercontent.com/adamsorbie/BenakisLab/main/16S/analysis_scripts/helper_functions.")
+devtools::source_url("https://raw.githubusercontent.com/adamsorbie/BenakisLab/main/16S/analysis_scripts/analysis_functions.R")
 ## additional libraries
 pacman::p_load(microViz, microbiome, microbiomeutilities, seecolor, cowplot)
 ```
@@ -129,6 +129,7 @@ print(Variance.plot)
 
 ggsave("QC/Variance.pdf")
 ```
+
 ```{r}
 ps_filt <- prune_taxa(taxa_sums(ps) > 5000, ps)
 
@@ -191,7 +192,7 @@ for (i in metrics){
 ### Bray-Curtis distance PCoA  
 
 
-```{r BC-NMDS, fig.height=4, fig.width=8}
+```{r BC-NMDS, fig.height=6, fig.width=8}
 bc <- calc_betadiv(ps_norm, dist = "bray", ord_method = "NMDS")
 plot_bc <- plot_beta_div(ps_norm, ordination = bc$Ordination, dist_matrix = bc$Distance_Matrix, 
               group_variable = "Group", cols = colours)
@@ -202,7 +203,7 @@ ggsave("Beta-Diversity/bray-curtis_plot.pdf", plot = plot_bc, device = "pdf")
 ### GUnifrac distance PCoA  
 
 fix issue with fig size 
-```{r gunifrac-NMDS, fig.height=4, fig.width=8}
+```{r gunifrac-NMDS, fig.height=6, fig.width=8}
 gu <- calc_betadiv(ps_norm, dist = "gunifrac", ord_method = "NMDS")
 p_gu <- plot_beta_div(ps_norm, ordination = gu$Ordination, dist_matrix = gu$Distance_Matrix, 
               group_variable = "Group", cols = colours)
