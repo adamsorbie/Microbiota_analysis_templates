@@ -6,6 +6,7 @@ output:
   html_document:
     code_folding: hide
     df_print: paged
+runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
