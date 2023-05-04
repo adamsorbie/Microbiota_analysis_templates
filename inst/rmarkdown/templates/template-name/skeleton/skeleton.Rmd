@@ -39,7 +39,9 @@ source( paste0(scripts_dir,"/analysis_functions.R"))
 # put other functions in benakis lab repo
 devtools::source_url("https://raw.githubusercontent.com/adamsorbie/BenakisLab/main/16S/analysis_scripts/helper_functions_microbiome.R")
 ## additional libraries
-pacman::p_load(microViz, microbiome, microbiomeutilities, seecolor, cowplot, shiny)
+pacman::p_load(microViz, microbiome, microbiomeutilities, cowplot, shiny, conflicted)
+conflict_prefer_all("rstatix")
+conflict_prefer_all("purrr")
 ```
 
 ## Set project attributes  
@@ -64,9 +66,6 @@ stacked_bar.palette <- c("#E64B35FF", "#4DBBD5FF", "#00A087FF", "#3C5488FF", "#F
                          "#E4E9B2", "#F9A620", "#054A29", "#52414C")
 
 hm.palette <-  RColorBrewer::brewer.pal(9, "RdBu")
-# view colours
-all_pals <- list(cat.palette, stacked_bar.palette, hm.palette)
-map(all_pals, function(x) seecolor::print_color(x, type="r"))
 ```
 
 
@@ -85,8 +84,8 @@ dir.create("Other")
 
 This code chunk reads the input files and creates a phyloseq object. 
 
-```{r load-data}
-ps <- import_as_pseq(otu = paste0(data_dir, "dada2_out/ASV_seqtab_tax.tab"),
+```{r load-data, warning=FALSE, message=FALSE, echo=FALSE}
+ps <- import_as_pseq(asvtab = paste0(data_dir, "dada2_out/ASV_seqtab_tax.tab"),
                 mapping = paste0(data_dir, "Metadata-16S-sequenced_wo_ctrls.txt"),
                 tree = paste0(data_dir, "dada2_out/ASV_tree.tre"))
 ```
@@ -96,7 +95,7 @@ ps <- import_as_pseq(otu = paste0(data_dir, "dada2_out/ASV_seqtab_tax.tab"),
 
 ### Distribution of reads  
 
-```{r, qc-1}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 qc_plot <- plot_read_distribution(ps, groups ="Group", 
     plot.type = "density") + theme_cowplot()
 qc_plot
@@ -105,22 +104,24 @@ ggsave("./QC/ReadDistribution.pdf")
 
 ### Library sizes (histogram)  
 
-```{r, qc-3}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 pdf("QC/Library_size.pdf")
 barplot(sort(sample_sums(ps)), horiz = TRUE, las = 2, xlab=NULL, main="Library sizes")
 hist(sort(sample_sums(ps)), las = 2)
 dev.off()
 ```
 ### Rarefaction curve 
-```{r}
+```{r,warning=FALSE, message=FALSE, echo=FALSE}
 pdf("QC/rarefaction_curve.pdf")
-rcurve <- rarecurve(t(otu_table(ps)), step=50, cex=0.5)
+mat <- otu_table(ps)
+class(mat) <- "matrix"
+rcurve <- vegan::rarecurve(t(mat), step=50, cex=0.5)
 dev.off()
 ```
 
 ### ASV variance
 
-```{r qc-7}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 Variance.plot <- qplot(log10(apply(otu_table(ps), 1, var)), 
                          xlab = "log10(variance)", 
                          main = "Variance in OTUs") + 
@@ -130,7 +131,7 @@ print(Variance.plot)
 
 ggsave("QC/Variance.pdf")
 ```
-```{r}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 ps_filt <- prune_taxa(taxa_sums(ps) > 5000, ps)
 
 Variance.plot <- qplot(log10(apply(otu_table(ps_filt), 1, var)), 
@@ -147,7 +148,7 @@ Remember to adjust normalisation with the filtered phyloseq object here if neces
 
 ## Normalisation {.tabset}
 
-```{r}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 ps_norm <- transform(ps, transform = "mss")
 ps_rel <- transform(ps, transform = "relative")
 save(ps_norm, ps_rel, file = "Processed-Data/normalised_ps.Rdata")
@@ -156,7 +157,7 @@ save(ps_norm, ps_rel, file = "Processed-Data/normalised_ps.Rdata")
 
 ## Alpha diversity {.tabset}  
 
-```{r fig.height=6, fig.width=4}
+```{r fig.height=6, fig.width=4, warning=FALSE, message=FALSE, echo=FALSE}
 alpha_div <- calc_alpha(ps_norm)
 meta <-meta_to_df(ps_norm)
 # merge alpha diversity df and metadata by rownames (0)
@@ -192,9 +193,9 @@ for (i in metrics){
 ### Bray-Curtis distance PCoA  
 
 
-```{r BC-NMDS, fig.height=4, fig.width=8}
+```{r BC-NMDS, fig.height=4, fig.width=8, warning=FALSE, message=FALSE, echo=FALSE}
 bc <- calc_betadiv(ps_norm, dist = "bray", ord_method = "NMDS")
-plot_bc <- plot_beta_div(ps_norm, ordination = bc$Ordination, dist_matrix = bc$Distance_Matrix, 
+plot_bc <- plot_beta_div(ps_norm, dist_matrix = bc$Distance_Matrix, ordination = bc$Ordination, 
               group_variable = "Group", cols = colours)
 ggsave("Beta-Diversity/bray-curtis_plot.pdf", plot = plot_bc, device = "pdf")
 ```
@@ -203,22 +204,21 @@ ggsave("Beta-Diversity/bray-curtis_plot.pdf", plot = plot_bc, device = "pdf")
 ### GUnifrac distance PCoA  
 
 fix issue with fig size 
-```{r gunifrac-NMDS, fig.height=4, fig.width=8}
+```{r gunifrac-NMDS, fig.height=4, fig.width=8, warning=FALSE, message=FALSE, echo=FALSE}
 gu <- calc_betadiv(ps_norm, dist = "gunifrac", ord_method = "NMDS")
-p_gu <- plot_beta_div(ps_norm, ordination = gu$Ordination, dist_matrix = gu$Distance_Matrix, 
+p_gu <- plot_beta_div(ps_norm,dist_matrix = gu$Distance_Matrix, ordination = gu$Ordination, 
               group_variable = "Group", cols = colours)
 ggsave("Beta-Diversity/gunifrac_plot.pdf", plot = plot_bc, device = "pdf")
 ```
 
 ## Taxonomic composition  {.tabset}   
 
-Having a look at the phyloegnetic composition of you data is useful for many reasons. 
+Having a look at the taxonomic composition of your data can often be useful. 
   
-```{r}
-
+```{r, warning=FALSE, message=FALSE}
 selectInput(
-  inputId = 'tax_rank', 
-  label = 'Taxonomic rank',
+  inputId = "tax_rank", 
+  label = "Taxonomic rank",
   choices = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus") 
 )
 
@@ -237,57 +237,42 @@ renderPlot({
 
     comp_fig <- ps %>% 
       tax_fix(unknowns = c("")) %>%
-      tax_agg(rank=input$tax_rank) %>% 
+      tax_agg(rank = input$tax_rank) %>% 
       ps_reorder(sample_ord) %>% 
-       ps_arrange(desc(top_taxa[1]), .target = "otu_table") %>% 
+      ps_arrange(desc(top_taxa[1]), .target = "otu_table") %>% 
       comp_barplot(
-        tax_level = input$tax?rank, n_taxa = input$n_taxa,
+        tax_level = input$tax_rank, n_taxa = input$n_taxa,
         bar_outline_colour = "black", bar_width = 0.9,
-        palette = taxa_pal) +
-      facet_grid(.~factor(Group, stringr::str_sort(unique(Group))),
-        scales = "free", space = "free" # these options are critically important!
+        palette = taxa_pal
+      ) +
+      facet_grid(.~factor(Group, stringr::str_sort(unique(Group))), 
+        scales = "free", space = "free",
       ) + 
       theme_cowplot() +
-      scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+      scale_y_continuous(labels = scales::percent_format(), expand = c(0,0)) +
       theme(axis.text.x = element_blank(),
             axis.title.x = element_blank(),
-            axis.title.y = element_text(size=22),
-            axis.text.y = element_text(size=18),
+            axis.title.y = element_text(size=20),
+            axis.text.y = element_text(size=16),
             axis.ticks = element_blank())
 
     comp_fig
 })
+
 ggsave(paste0("Taxonomic-Composition/", input$tax_rank, "_level_composition.pdf", comp_fig, device = "pdf", 
-       dpi=300, height= 8, width=14)
+       dpi=300, height= 8, width=14))
 
 ```
-
-
-```
-
 
 ## Differential abundance {.tabset}
 
-```{r}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 ancom_res <- ancom_da(ps, "Group", "Group", ord=c("Sham", "Stroke"), zero_thresh = 0.33)
 ```
 
 ```{r}
 plot_da(ancom_res, groups=c("Sham", "Stroke"), cols = colours)
 ```
-
-## Heatmap  
-
-```{r heatmap}
-ps_format <- format_taxonomy(ps_norm)
-da_asvs <- ancom_res$Row.names
-```
-
-```{r}
-plot_heatmap(ps_format, da_asvs, variable = "Group", heatmap.colours=hm.palette)
-# save heatmap
-```
-
 
 ```{r session-info}
 
