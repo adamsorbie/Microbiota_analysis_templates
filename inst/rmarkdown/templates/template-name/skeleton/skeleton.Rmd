@@ -37,9 +37,9 @@ if (!file.exists(paste0(scripts_dir,"/analysis_functions.R"))){
 
 source( paste0(scripts_dir,"/analysis_functions.R"))
 # put other functions in benakis lab repo
-devtools::source_url("https://raw.githubusercontent.com/adamsorbie/BenakisLab/main/16S/analysis_scripts/helper_functions_microbiome.R")
+devtools::source_url("https://raw.githubusercontent.com/adamsorbie/BenakisLab/main/16S/analysis/helper_functions_microbiome.R")
 ## additional libraries
-pacman::p_load(microViz, microbiome, microbiomeutilities, cowplot, shiny, conflicted)
+pacman::p_load(microViz, microbiome, microbiomeutilities, cowplot, shiny, conflicted, plotly)
 conflict_prefer_all("rstatix")
 conflict_prefer_all("purrr")
 ```
@@ -214,50 +214,52 @@ ggsave("Beta-Diversity/gunifrac_plot.pdf", plot = plot_bc, device = "pdf")
 ## Taxonomic composition  {.tabset}   
 
 Having a look at the taxonomic composition of your data can often be useful. 
-  
-```{r, warning=FALSE, message=FALSE}
-selectInput(
-  inputId = "tax_rank", 
-  label = "Taxonomic rank",
-  choices = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus") 
+
+```{r}
+inputPanel(
+  shiny::selectInput(
+    inputId = 'tax_rank', 
+    label = 'Taxonomic rank',
+    choices = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus") 
+  ),
+  shiny::numericInput(inputId = "n_taxa", label="How many taxa to show?",value=8, max=14)
 )
+```
 
-numericInput("n_taxa", "How many taxa to show?", 8)
-
-top_taxa <- c(get_top_n(ps, n=input$n_taxa, level = input$tax_rank), "other")
-
-taxa_pal <- c(stacked_bar.palette[1:length(top_taxa) -1], "#DCDCDC")
-names(taxa_pal) <- top_taxa
-
-renderPlot({
-    sample_ord <- ps %>%
-      ps_arrange(Group) %>%
+```{r, warning=FALSE, message=FALSE}
+output$plot <- renderPlotly({
+    
+    top_taxa <- c(get_top_n(ps_emp, n=10, level = input$tax_rank), "other")
+    taxa_pal <- c(stacked_bar.palette[1:length(top_taxa) -1], "#DCDCDC")
+    names(taxa_pal) <- top_taxa
+    
+    sample_ord <- ps_emp %>%
+      ps_arrange(Sample_Type) %>%
       sample_data() %>%
       rownames()
 
-    comp_fig <- ps %>% 
-      tax_fix(unknowns = c("")) %>%
-      tax_agg(rank = input$tax_rank) %>% 
-      ps_reorder(sample_ord) %>% 
-      ps_arrange(desc(top_taxa[1]), .target = "otu_table") %>% 
-      comp_barplot(
-        tax_level = input$tax_rank, n_taxa = input$n_taxa,
-        bar_outline_colour = "black", bar_width = 0.9,
-        palette = taxa_pal
-      ) +
-      facet_grid(.~factor(Group, stringr::str_sort(unique(Group))), 
-        scales = "free", space = "free",
-      ) + 
-      theme_cowplot() +
-      scale_y_continuous(labels = scales::percent_format(), expand = c(0,0)) +
-      theme(axis.text.x = element_blank(),
-            axis.title.x = element_blank(),
-            axis.title.y = element_text(size=20),
-            axis.text.y = element_text(size=16),
-            axis.ticks = element_blank())
-
-    comp_fig
-})
+    comp_fig <- ps_emp %>% 
+        tax_fix(unknowns = c("unassigned")) %>%
+        tax_agg(rank=input$tax_rank) %>% 
+        ps_reorder(sample_ord) %>% 
+        ps_arrange(desc(top_taxa[1]), .target = "otu_table") %>% 
+        comp_barplot(
+          tax_level = input$tax_rank, n_taxa = input$n_taxa,
+          bar_outline_colour = "black", bar_width = 0.9,
+          palette = taxa_pal) +
+        facet_grid(.~factor(Sample_Type, stringr::str_sort(unique(Sample_Type))),
+                   scales = "free", space = "free"
+        ) + 
+        theme_cowplot() +
+        scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+        theme(axis.text.x = element_blank(),
+              axis.title.x = element_blank(),
+              axis.title.y = element_text(size=22),
+              axis.text.y = element_text(size=18),
+              axis.ticks = element_blank())
+    
+    comp_fig()
+  })
 
 ggsave(paste0("Taxonomic-Composition/", input$tax_rank, "_level_composition.pdf", comp_fig, device = "pdf", 
        dpi=300, height= 8, width=14))
